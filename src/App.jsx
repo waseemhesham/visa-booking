@@ -40,7 +40,7 @@ function App() {
     const tomorrow = new Date(
       now.getFullYear(),
       now.getMonth(),
-      now.getDate() + 1
+      now.getDate() + 2
     );
     return tomorrow.toISOString().split('T')[0];
   })();
