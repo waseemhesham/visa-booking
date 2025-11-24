@@ -1,6 +1,20 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './db.js';
 
+const formatYMD = (year, monthIndex, day) => {
+  const m = String(monthIndex + 1).padStart(2, '0'); // monthIndex is 0-based
+  const d = String(day).padStart(2, '0');
+  return `${year}-${m}-${d}`;
+};
+
+const formatLocalDate = (dateObj) => {
+  return formatYMD(
+    dateObj.getFullYear(),
+    dateObj.getMonth(),
+    dateObj.getDate()
+  );
+};
+
 // Delete any bookings in the past (keep table clean)
 const deletePastBookings = async () => {
   const today = new Date();
@@ -9,7 +23,7 @@ const deletePastBookings = async () => {
     today.getMonth(),
     today.getDate()
   );
-  const todayStr = localToday.toISOString().split('T')[0]; // YYYY-MM-DD
+  const todayStr = formatLocalDate(localToday); // YYYY-MM-DD
 
   await supabase
     .from('bookings')
@@ -43,15 +57,16 @@ function App() {
   const [calendarMonth, setCalendarMonth] = useState(now.getMonth()); // 0-11
 
   // tomorrow string (for min date in calendar)
-  const tomorrowStr = (() => {
-    const nowLocal = new Date();
-    const tomorrow = new Date(
-      nowLocal.getFullYear(),
-      nowLocal.getMonth(),
-      nowLocal.getDate() + 2
-    );
-    return tomorrow.toISOString().split('T')[0];
-  })();
+const tomorrowStr = (() => {
+  const nowLocal = new Date();
+  const tomorrow = new Date(
+    nowLocal.getFullYear(),
+    nowLocal.getMonth(),
+    nowLocal.getDate() + 1
+  );
+  return formatLocalDate(tomorrow);
+})();
+
 
   // initial: clean old bookings + load fully booked list
   useEffect(() => {
@@ -95,7 +110,7 @@ function App() {
       today.getMonth(),
       today.getDate()
     );
-    const todayStr = localToday.toISOString().split('T')[0];
+    const todayStr = formatLocalDate(localToday);
 
     // keep today and future only, with 3+ bookings
     const fullDates = Object.keys(counts).filter(
@@ -107,11 +122,12 @@ function App() {
 
   const fetchCalendarCounts = async () => {
     // Current selected month range
-    const firstDay = new Date(calendarYear, calendarMonth, 1);
-    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
+const firstDay = new Date(calendarYear, calendarMonth, 1);
+const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
 
-    const firstDayStr = firstDay.toISOString().split('T')[0];
-    const lastDayStr = lastDay.toISOString().split('T')[0];
+const firstDayStr = formatLocalDate(firstDay);
+const lastDayStr = formatLocalDate(lastDay);
+
 
     const { data, error } = await supabase
       .from('bookings')
@@ -339,9 +355,9 @@ function App() {
 
     // days of month
     for (let day = 1; day <= daysInMonth; day++) {
-      const dateObj = new Date(calendarYear, calendarMonth, day);
-      const dateStr = dateObj.toISOString().split('T')[0];
-      const count = calendarCounts[dateStr] || 0;
+const dateStr = formatYMD(calendarYear, calendarMonth, day);
+const count = calendarCounts[dateStr] || 0;
+
 
       cells.push({
         day,
