@@ -491,7 +491,16 @@ const count = calendarCounts[dateStr] || 0;
     >
       {/* LEFT: booking + cancel */}
       <div style={{ flex: 1, maxWidth: '480px', marginRight: '24px' }}>
-        <h2>German Chamber Booking (Max 3 per Day)</h2>
+        <h2
+  style={{
+    textAlign: 'center',
+    whiteSpace: 'nowrap',
+    marginBottom: '20px'
+  }}
+>
+  German Chamber Booking (Max 3 per Day)
+</h2>
+
 
         {/* Booking form */}
         <form onSubmit={handleBooking}>
