@@ -31,8 +31,11 @@ function App() {
   const [myBookings, setMyBookings] = useState([]);
   const [cancelMessage, setCancelMessage] = useState('');
 
-  // calendar info
+  // fully booked info
   const [fullyBookedDates, setFullyBookedDates] = useState([]);
+
+  // calendar counts: { 'YYYY-MM-DD': numberOfBookings }
+  const [calendarCounts, setCalendarCounts] = useState({});
 
   // tomorrow string (for min date in calendar)
   const tomorrowStr = (() => {
@@ -45,45 +48,84 @@ function App() {
     return tomorrow.toISOString().split('T')[0];
   })();
 
-  // load fully booked dates & clean past bookings on start
+  // calendar month/year (current month)
+  const now = new Date();
+  const calendarYear = now.getFullYear();
+  const calendarMonth = now.getMonth(); // 0-11
+
+  // load data on start
   useEffect(() => {
     const init = async () => {
       await deletePastBookings();
       await fetchFullyBookedDates();
+      await fetchCalendarCounts();
     };
     init();
   }, []);
 
   const fetchFullyBookedDates = async () => {
-  const { data, error } = await supabase
-    .from('bookings')
-    .select('booking_date')
-    .eq('status', 'active');
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('booking_date')
+      .eq('status', 'active');
 
-  if (error) {
-    console.error(error);
-    return;
-  }
+    if (error) {
+      console.error(error);
+      return;
+    }
 
-  // Count bookings per date
-  const counts = {};
-  data.forEach((row) => {
-    const d = row.booking_date;
-    counts[d] = (counts[d] || 0) + 1;
-  });
+    // Count bookings per date
+    const counts = {};
+    data.forEach((row) => {
+      const d = row.booking_date;
+      counts[d] = (counts[d] || 0) + 1;
+    });
 
-  // Compute "today" in local time as YYYY-MM-DD
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const todayStr = today.toISOString().split('T')[0];
+    // Compute today as YYYY-MM-DD in local time
+    const today = new Date();
+    const localToday = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    );
+    const todayStr = localToday.toISOString().split('T')[0];
 
-  // Keep only today or future dates (>= today) that have 3+ bookings
-  const fullDates = Object.keys(counts).filter(
-    (d) => counts[d] >= 3 && d >= todayStr
-  );
+    // keep today and future only, with 3+ bookings
+    const fullDates = Object.keys(counts).filter(
+      (d) => counts[d] >= 3 && d >= todayStr
+    );
 
-  setFullyBookedDates(fullDates);
-};
+    setFullyBookedDates(fullDates);
+  };
+
+  const fetchCalendarCounts = async () => {
+    // Current month range
+    const firstDay = new Date(calendarYear, calendarMonth, 1);
+    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
+
+    const firstDayStr = firstDay.toISOString().split('T')[0];
+    const lastDayStr = lastDay.toISOString().split('T')[0];
+
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('booking_date')
+      .eq('status', 'active')
+      .gte('booking_date', firstDayStr)
+      .lte('booking_date', lastDayStr);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const counts = {};
+    data.forEach((row) => {
+      const d = row.booking_date;
+      counts[d] = (counts[d] || 0) + 1;
+    });
+
+    setCalendarCounts(counts);
+  };
 
   const handleBooking = async (e) => {
     e.preventDefault();
@@ -196,8 +238,9 @@ function App() {
     setDate('');
     setPin('');
 
-    // refresh fully booked dates and, if same email, reload bookings
+    // refresh lists
     await fetchFullyBookedDates();
+    await fetchCalendarCounts();
     if (cancelEmail && cancelEmail.toLowerCase() === email.toLowerCase()) {
       await loadMyBookings();
     }
@@ -250,59 +293,224 @@ function App() {
     // reload lists
     await loadMyBookings();
     await fetchFullyBookedDates();
+    await fetchCalendarCounts();
+  };
+
+  // Render calendar cells for current month
+  const renderCalendar = () => {
+    const firstDay = new Date(calendarYear, calendarMonth, 1);
+    const firstDayOfWeek = firstDay.getDay(); // 0=Sun..6=Sat
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+
+    const cells = [];
+
+    // empty cells before day 1
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      cells.push(null);
+    }
+
+    // days of month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateObj = new Date(calendarYear, calendarMonth, day);
+      const dateStr = dateObj.toISOString().split('T')[0];
+      const count = calendarCounts[dateStr] || 0;
+      const color = count === 3 ? 'red' : 'green';
+
+      cells.push({
+        day,
+        count,
+        color,
+      });
+    }
+
+    // chunk into weeks (rows of 7)
+    const weeks = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      weeks.push(cells.slice(i, i + 7));
+    }
+
+    const monthName = date.toLocaleString('default', {
+      month: 'long',
+    });
+
+    return (
+      <div>
+        <h4 style={{ textAlign: 'center', marginBottom: '8px' }}>
+          {monthName} {calendarYear}
+        </h4>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: '4px',
+            fontSize: '0.8rem',
+          }}
+        >
+          {/* Week day headers */}
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+            <div
+              key={d}
+              style={{ textAlign: 'center', fontWeight: 'bold', padding: '4px 0' }}
+            >
+              {d}
+            </div>
+          ))}
+
+          {/* Calendar cells */}
+          {weeks.map((week, wi) =>
+            week.map((cell, ci) => {
+              const key = `${wi}-${ci}`;
+              if (!cell) {
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      border: '1px solid #eee',
+                      minHeight: '40px',
+                    }}
+                  />
+                );
+              }
+
+              return (
+                <div
+                  key={key}
+                  style={{
+                    border: '1px solid #eee',
+                    minHeight: '40px',
+                    padding: '2px',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div>{cell.day}</div>
+                  <div
+                    style={{
+                      marginTop: '2px',
+                      fontSize: '0.7rem',
+                      color: cell.count === 3 ? 'red' : 'green',
+                    }}
+                  >
+                    {cell.count}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
     <div
       style={{
-        maxWidth: '480px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        maxWidth: '900px',
         margin: '40px auto',
-        marginLeft: '120px', // shift UI ~3cm to the right
+        marginLeft: '120px', // shift whole UI right ~3cm
         fontFamily: 'Arial',
       }}
     >
-      <h2>Visa Booking (Max 3 per Day)</h2>
+      {/* LEFT: booking + cancel */}
+      <div style={{ flex: 1, maxWidth: '480px', marginRight: '24px' }}>
+        <h2>Visa Booking (Max 3 per Day)</h2>
 
-      {/* Booking form */}
-      <form onSubmit={handleBooking}>
+        {/* Booking form */}
+        <form onSubmit={handleBooking}>
+          <div style={{ marginBottom: '12px' }}>
+            <label>Email (@sap.com)</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value.trim())}
+              style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '12px' }}>
+            <label>Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '12px' }}>
+            <label>Booking Date</label>
+            <input
+              key={tomorrowStr}
+              type="date"
+              value={date}
+              min={tomorrowStr} // start from tomorrow
+              onChange={(e) => setDate(e.target.value)}
+              style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '12px' }}>
+            <label>PIN (4 digits)</label>
+            <input
+              type="password"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              maxLength={4}
+              inputMode="numeric"
+              style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+            />
+          </div>
+
+          <button
+            style={{
+              padding: '10px 20px',
+              cursor: 'pointer',
+            }}
+          >
+            Book
+          </button>
+        </form>
+
+        {message && <p style={{ marginTop: '12px' }}>{message}</p>}
+
+        {/* Fully booked dates info */}
+        <div style={{ marginTop: '20px' }}>
+          <strong>Fully booked dates (today & future):</strong>
+          {fullyBookedDates.length === 0 ? (
+            <p style={{ marginTop: '4px' }}>No fully booked days yet.</p>
+          ) : (
+            <ul style={{ marginTop: '4px' }}>
+              {fullyBookedDates.map((d) => (
+                <li key={d} style={{ opacity: 0.8 }}>
+                  {d}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <hr style={{ margin: '30px 0' }} />
+
+        {/* Cancel section */}
+        <h3>Cancel my booking</h3>
+
         <div style={{ marginBottom: '12px' }}>
-          <label>Email (@sap.com)</label>
+          <label>Your email (@sap.com)</label>
           <input
             type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value.trim())}
+            value={cancelEmail}
+            onChange={(e) => setCancelEmail(e.target.value.trim())}
             style={{ width: '100%', padding: '8px', marginTop: '4px' }}
           />
         </div>
 
         <div style={{ marginBottom: '12px' }}>
-          <label>Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{ width: '100%', padding: '8px', marginTop: '4px' }}
-          />
-        </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <label>Booking Date</label>
-          <input
-            key={tomorrowStr}
-            type="date"
-            value={date}
-            min={tomorrowStr} // start from tomorrow
-            onChange={(e) => setDate(e.target.value)}
-            style={{ width: '100%', padding: '8px', marginTop: '4px' }}
-          />
-        </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <label>PIN (4 digits)</label>
+          <label>Your PIN (4 digits)</label>
           <input
             type="password"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
+            value={cancelPin}
+            onChange={(e) => setCancelPin(e.target.value)}
             maxLength={4}
             inputMode="numeric"
             style={{ width: '100%', padding: '8px', marginTop: '4px' }}
@@ -310,100 +518,54 @@ function App() {
         </div>
 
         <button
-          style={{
-            padding: '10px 20px',
-            cursor: 'pointer',
-          }}
+          type="button"
+          onClick={loadMyBookings}
+          style={{ padding: '8px 16px', marginBottom: '12px', cursor: 'pointer' }}
         >
-          Book
+          Load my bookings
         </button>
-      </form>
 
-      {message && (
-        <p style={{ marginTop: '12px' }}>{message}</p>
-      )}
-
-      {/* Fully booked dates info */}
-      <div style={{ marginTop: '20px' }}>
-        <strong>Fully booked dates:</strong>
-        {fullyBookedDates.length === 0 ? (
-          <p style={{ marginTop: '4px' }}>No fully booked days yet.</p>
-        ) : (
-          <ul style={{ marginTop: '4px' }}>
-            {fullyBookedDates.map((d) => (
-              <li key={d} style={{ opacity: 0.6 }}>
-                {d}
-              </li>
-            ))}
-          </ul>
+        {myBookings.length > 0 && (
+          <div style={{ marginBottom: '12px' }}>
+            <strong>Your bookings:</strong>
+            <ul style={{ marginTop: '6px', paddingLeft: '18px' }}>
+              {myBookings.map((b) => (
+                <li key={b.id} style={{ marginBottom: '6px' }}>
+                  {b.booking_date} — {b.status}
+                  <button
+                    type="button"
+                    onClick={() => cancelBookingById(b.id)}
+                    style={{
+                      marginLeft: '8px',
+                      padding: '4px 10px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
+
+        {cancelMessage && <p style={{ marginTop: '8px' }}>{cancelMessage}</p>}
       </div>
 
-      <hr style={{ margin: '30px 0' }} />
-
-      {/* Cancel section */}
-      <h3>Cancel my booking</h3>
-
-      <div style={{ marginBottom: '12px' }}>
-        <label>Your email (@sap.com)</label>
-        <input
-          type="email"
-          value={cancelEmail}
-          onChange={(e) => setCancelEmail(e.target.value.trim())}
-          style={{ width: '100%', padding: '8px', marginTop: '4px' }}
-        />
-      </div>
-
-      <div style={{ marginBottom: '12px' }}>
-        <label>Your PIN (4 digits)</label>
-        <input
-          type="password"
-          value={cancelPin}
-          onChange={(e) => setCancelPin(e.target.value)}
-          maxLength={4}
-          inputMode="numeric"
-          style={{ width: '100%', padding: '8px', marginTop: '4px' }}
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={loadMyBookings}
-        style={{ padding: '8px 16px', marginBottom: '12px', cursor: 'pointer' }}
+      {/* RIGHT: monthly calendar */}
+      <div
+        style={{
+          width: '260px',
+          border: '1px solid #ddd',
+          borderRadius: '8px',
+          padding: '12px',
+          backgroundColor: '#fafafa',
+        }}
       >
-        Load my bookings
-      </button>
-
-      {myBookings.length > 0 && (
-        <div style={{ marginBottom: '12px' }}>
-          <strong>Your bookings:</strong>
-          <ul style={{ marginTop: '6px', paddingLeft: '18px' }}>
-            {myBookings.map((b) => (
-              <li key={b.id} style={{ marginBottom: '6px' }}>
-                {b.booking_date} — {b.status}
-                <button
-                  type="button"
-                  onClick={() => cancelBookingById(b.id)}
-                  style={{
-                    marginLeft: '8px',
-                    padding: '4px 10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {cancelMessage && (
-        <p style={{ marginTop: '8px' }}>{cancelMessage}</p>
-      )}
+        {renderCalendar()}
+      </div>
     </div>
   );
 }
 
 export default App;
-
