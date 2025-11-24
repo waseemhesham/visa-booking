@@ -53,6 +53,10 @@ function App() {
   // calendar counts: { 'YYYY-MM-DD': numberOfBookings }
   const [calendarCounts, setCalendarCounts] = useState({});
 
+  // popup for clicking on a date in the calendar
+  const [popupDate, setPopupDate] = useState(null);
+  const [popupBookings, setPopupBookings] = useState([]);
+
   // calendar month/year state (starts at current month)
   const now = new Date();
   const [calendarYear, setCalendarYear] = useState(now.getFullYear());
@@ -89,8 +93,7 @@ function App() {
   const fetchFullyBookedDates = async () => {
     const { data, error } = await supabase
       .from('bookings')
-      .select('booking_date')
-      .eq('status', 'active');
+      .select('booking_date'); // no status filter
 
     if (error) {
       console.error(error);
@@ -132,9 +135,8 @@ function App() {
     const { data, error } = await supabase
       .from('bookings')
       .select('booking_date')
-      .eq('status', 'active')
       .gte('booking_date', firstDayStr)
-      .lte('booking_date', lastDayStr);
+      .lte('booking_date', lastDayStr); // no status filter
 
     if (error) {
       console.error(error);
@@ -197,12 +199,11 @@ function App() {
     // clean past bookings again, just in case
     await deletePastBookings();
 
-    // check this email does not have another ACTIVE booking
+    // check this email does not have another booking (table already has only future rows)
     const { count: activeForEmail, error: emailCountError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
-      .eq('employee_email', email)
-      .eq('status', 'active');
+      .eq('employee_email', email); // removed status filter
 
     if (emailCountError) {
       console.error(emailCountError);
@@ -215,12 +216,11 @@ function App() {
       return;
     }
 
-    // check how many ACTIVE bookings already exist for this date
+    // check how many bookings already exist for this date
     const { count, error: countError } = await supabase
       .from('bookings')
       .select('id', { count: 'exact', head: true })
-      .eq('booking_date', dateStr)
-      .eq('status', 'active');
+      .eq('booking_date', dateStr); // removed status filter
 
     if (countError) {
       console.error(countError);
@@ -229,7 +229,7 @@ function App() {
     }
 
     if (count >= 3) {
-      setMessage('This day already has 3 active bookings.');
+      setMessage('This day already has 3 bookings.');
       return;
     }
 
@@ -238,13 +238,13 @@ function App() {
       return;
     }
 
-    // insert booking as ACTIVE with PIN
+    // insert booking with PIN (status still inserted but not used in filters)
     const { error: insertError } = await supabase.from('bookings').insert([
       {
         employee_email: email,
         employee_name: name,
         booking_date: dateStr,
-        status: 'active',
+        status: 'active', // still fine if column exists
         pin_code: pin,
       },
     ]);
@@ -317,6 +317,22 @@ function App() {
     await loadMyBookings();
     await fetchFullyBookedDates();
     await fetchCalendarCounts();
+  };
+
+  // load bookings for a specific date (for popup)
+  const loadBookingsForDate = async (dateStr) => {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('employee_email')
+      .eq('booking_date', dateStr);
+
+    if (error) {
+      console.error(error);
+      setPopupBookings([]);
+      return;
+    }
+
+    setPopupBookings(data || []);
   };
 
   // month navigation for calendar
@@ -453,14 +469,25 @@ function App() {
                 cell.day
               ).getDay();
 
+              const dateStrForClick = formatYMD(
+                calendarYear,
+                calendarMonth,
+                cell.day
+              );
+
               return (
                 <div
                   key={key}
+                  onClick={() => {
+                    setPopupDate(dateStrForClick);
+                    loadBookingsForDate(dateStrForClick);
+                  }}
                   style={{
                     border: '1px solid #eee',
                     minHeight: '40px',
                     padding: '2px',
                     textAlign: 'center',
+                    cursor: 'pointer',
                   }}
                 >
                   <div>{cell.day}</div>
@@ -495,68 +522,124 @@ function App() {
   };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        maxWidth: '1100px',
-        margin: '40px auto',
-        marginLeft: '120px', // main UI shift right
-        fontFamily: 'Arial',
-      }}
-    >
-      {/* LEFT: booking + cancel */}
-      <div style={{ flex: 1, maxWidth: '480px', marginRight: '24px' }}>
-        <h2
-          style={{
-            textAlign: 'center',
-            whiteSpace: 'nowrap',
-            marginBottom: '20px',
-          }}
-        >
-          German Chamber Booking (Max 3 per Day)
-        </h2>
+    <>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          maxWidth: '1100px',
+          margin: '40px auto',
+          marginLeft: '120px', // main UI shift right
+          fontFamily: 'Arial',
+        }}
+      >
+        {/* LEFT: booking + cancel */}
+        <div style={{ flex: 1, maxWidth: '480px', marginRight: '24px' }}>
+          <h2
+            style={{
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+              marginBottom: '20px',
+            }}
+          >
+            German Chamber Booking (Max 3 per Day)
+          </h2>
 
-        {/* Booking form */}
-        <form onSubmit={handleBooking}>
+          {/* Booking form */}
+          <form onSubmit={handleBooking}>
+            <div style={{ marginBottom: '12px' }}>
+              <label>Email (@sap.com)</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value.trim())}
+                style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label>Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label>Booking Date</label>
+              <input
+                key={tomorrowStr}
+                type="date"
+                value={date}
+                min={tomorrowStr} // start from tomorrow
+                onChange={(e) => setDate(e.target.value)}
+                style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label>PIN (4 digits)</label>
+              <input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                maxLength={4}
+                inputMode="numeric"
+                style={{ width: '100%', padding: '8px', marginTop: '4px' }}
+              />
+            </div>
+
+            <button
+              style={{
+                padding: '10px 20px',
+                cursor: 'pointer',
+              }}
+            >
+              Book
+            </button>
+          </form>
+
+          {message && <p style={{ marginTop: '12px' }}>{message}</p>}
+
+          {/* Fully booked dates info */}
+          <div style={{ marginTop: '20px' }}>
+            <strong>Fully booked dates (today & future):</strong>
+            {fullyBookedDates.length === 0 ? (
+              <p style={{ marginTop: '4px' }}>No fully booked days yet.</p>
+            ) : (
+              <ul style={{ marginTop: '4px' }}>
+                {fullyBookedDates.map((d) => (
+                  <li key={d} style={{ opacity: 0.8 }}>
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <hr style={{ margin: '30px 0' }} />
+
+          {/* Cancel section */}
+          <h3>Cancel my booking</h3>
+
           <div style={{ marginBottom: '12px' }}>
-            <label>Email (@sap.com)</label>
+            <label>Your email (@sap.com)</label>
             <input
               type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value.trim())}
+              value={cancelEmail}
+              onChange={(e) => setCancelEmail(e.target.value.trim())}
               style={{ width: '100%', padding: '8px', marginTop: '4px' }}
             />
           </div>
 
           <div style={{ marginBottom: '12px' }}>
-            <label>Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              style={{ width: '100%', padding: '8px', marginTop: '4px' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '12px' }}>
-            <label>Booking Date</label>
-            <input
-              key={tomorrowStr}
-              type="date"
-              value={date}
-              min={tomorrowStr} // start from tomorrow
-              onChange={(e) => setDate(e.target.value)}
-              style={{ width: '100%', padding: '8px', marginTop: '4px' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '12px' }}>
-            <label>PIN (4 digits)</label>
+            <label>Your PIN (4 digits)</label>
             <input
               type="password"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
+              value={cancelPin}
+              onChange={(e) => setCancelPin(e.target.value)}
               maxLength={4}
               inputMode="numeric"
               style={{ width: '100%', padding: '8px', marginTop: '4px' }}
@@ -564,156 +647,154 @@ function App() {
           </div>
 
           <button
+            type="button"
+            onClick={loadMyBookings}
             style={{
-              padding: '10px 20px',
+              padding: '8px 16px',
+              marginBottom: '12px',
               cursor: 'pointer',
             }}
           >
-            Book
+            Load my bookings
           </button>
-        </form>
 
-        {message && <p style={{ marginTop: '12px' }}>{message}</p>}
+          {myBookings.length > 0 && (
+            <div style={{ marginBottom: '12px' }}>
+              <strong>Your bookings:</strong>
+              <ul style={{ marginTop: '6px', paddingLeft: '18px' }}>
+                {myBookings.map((b) => (
+                  <li key={b.id} style={{ marginBottom: '6px' }}>
+                    {b.booking_date} — {b.status}
+                    <button
+                      type="button"
+                      onClick={() => cancelBookingById(b.id)}
+                      style={{
+                        marginLeft: '8px',
+                        padding: '4px 10px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-        {/* Fully booked dates info */}
-        <div style={{ marginTop: '20px' }}>
-          <strong>Fully booked dates (today & future):</strong>
-          {fullyBookedDates.length === 0 ? (
-            <p style={{ marginTop: '4px' }}>No fully booked days yet.</p>
+          {cancelMessage && <p style={{ marginTop: '8px' }}>{cancelMessage}</p>}
+        </div>
+
+        {/* RIGHT: monthly calendar, shifted right & down */}
+        <div
+          style={{
+            width: '260px',
+            border: '1px solid #ddd',
+            borderRadius: '8px',
+            padding: '12px',
+            backgroundColor: '#fafafa',
+            marginLeft: '230px', // ≈ 6 cm to the right
+            marginTop: '76px', // ≈ 2 cm down
+          }}
+        >
+          {renderCalendar()}
+
+          {/* Legend */}
+          <div style={{ marginTop: '16px', fontSize: '0.9rem' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: '6px',
+              }}
+            >
+              <div
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  backgroundColor: 'red',
+                  marginRight: '6px',
+                }}
+              ></div>
+              <span>Fully Booked</span>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: '6px',
+              }}
+            >
+              <div
+                style={{
+                  width: '14px',
+                  height: '14px',
+                  backgroundColor: 'green',
+                  marginRight: '6px',
+                }}
+              ></div>
+              <span>Available Slot</span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <span
+                style={{
+                  color: 'red',
+                  fontWeight: 'bold',
+                  marginRight: '6px',
+                  fontSize: '1rem',
+                }}
+              >
+                X
+              </span>
+              <span>Not Available</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Popup for date bookings */}
+      {popupDate && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'white',
+            padding: '20px',
+            border: '2px solid #444',
+            borderRadius: '8px',
+            zIndex: 1000,
+            minWidth: '300px',
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Bookings on {popupDate}</h3>
+
+          {popupBookings.length === 0 ? (
+            <p>No bookings for this date.</p>
           ) : (
-            <ul style={{ marginTop: '4px' }}>
-              {fullyBookedDates.map((d) => (
-                <li key={d} style={{ opacity: 0.8 }}>
-                  {d}
-                </li>
+            <ul>
+              {popupBookings.map((b, index) => (
+                <li key={index}>{b.employee_email}</li>
               ))}
             </ul>
           )}
+
+          <button
+            onClick={() => setPopupDate(null)}
+            style={{
+              marginTop: '12px',
+              padding: '6px 12px',
+              cursor: 'pointer',
+            }}
+          >
+            Close
+          </button>
         </div>
-
-        <hr style={{ margin: '30px 0' }} />
-
-        {/* Cancel section */}
-        <h3>Cancel my booking</h3>
-
-        <div style={{ marginBottom: '12px' }}>
-          <label>Your email (@sap.com)</label>
-          <input
-            type="email"
-            value={cancelEmail}
-            onChange={(e) => setCancelEmail(e.target.value.trim())}
-            style={{ width: '100%', padding: '8px', marginTop: '4px' }}
-          />
-        </div>
-
-        <div style={{ marginBottom: '12px' }}>
-          <label>Your PIN (4 digits)</label>
-          <input
-            type="password"
-            value={cancelPin}
-            onChange={(e) => setCancelPin(e.target.value)}
-            maxLength={4}
-            inputMode="numeric"
-            style={{ width: '100%', padding: '8px', marginTop: '4px' }}
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={loadMyBookings}
-          style={{
-            padding: '8px 16px',
-            marginBottom: '12px',
-            cursor: 'pointer',
-          }}
-        >
-          Load my bookings
-        </button>
-
-        {myBookings.length > 0 && (
-          <div style={{ marginBottom: '12px' }}>
-            <strong>Your bookings:</strong>
-            <ul style={{ marginTop: '6px', paddingLeft: '18px' }}>
-              {myBookings.map((b) => (
-                <li key={b.id} style={{ marginBottom: '6px' }}>
-                  {b.booking_date} — {b.status}
-                  <button
-                    type="button"
-                    onClick={() => cancelBookingById(b.id)}
-                    style={{
-                      marginLeft: '8px',
-                      padding: '4px 10px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {cancelMessage && <p style={{ marginTop: '8px' }}>{cancelMessage}</p>}
-      </div>
-
-      {/* RIGHT: monthly calendar, shifted right & down */}
-      <div
-        style={{
-          width: '260px',
-          border: '1px solid #ddd',
-          borderRadius: '8px',
-          padding: '12px',
-          backgroundColor: '#fafafa',
-          marginLeft: '230px', // ≈ 6 cm to the right
-          marginTop: '76px', // ≈ 2 cm down
-        }}
-      >
-        {renderCalendar()}
-
-{/* Legend */}
-<div style={{ marginTop: '16px', fontSize: '0.9rem' }}>
-  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
-    <div
-      style={{
-        width: '14px',
-        height: '14px',
-        backgroundColor: 'red',
-        marginRight: '6px',
-      }}
-    ></div>
-    <span>Fully Booked</span>
-  </div>
-
-  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
-    <div
-      style={{
-        width: '14px',
-        height: '14px',
-        backgroundColor: 'green',
-        marginRight: '6px',
-      }}
-    ></div>
-    <span>Available Slot</span>
-  </div>
-
-  <div style={{ display: 'flex', alignItems: 'center' }}>
-    <span
-      style={{
-        color: 'red',
-        fontWeight: 'bold',
-        marginRight: '6px',
-        fontSize: '1rem',
-      }}
-    >
-      X
-    </span>
-    <span>Not Available</span>
-  </div>
-</div>
-
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
