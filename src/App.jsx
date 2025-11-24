@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './db.js';
 
+// Helper: format YYYY-MM-DD from year, monthIndex (0-based), day
 const formatYMD = (year, monthIndex, day) => {
-  const m = String(monthIndex + 1).padStart(2, '0'); // monthIndex is 0-based
+  const m = String(monthIndex + 1).padStart(2, '0');
   const d = String(day).padStart(2, '0');
   return `${year}-${m}-${d}`;
 };
 
+// Helper: format YYYY-MM-DD from Date object in local time
 const formatLocalDate = (dateObj) => {
   return formatYMD(
     dateObj.getFullYear(),
@@ -57,16 +59,15 @@ function App() {
   const [calendarMonth, setCalendarMonth] = useState(now.getMonth()); // 0-11
 
   // tomorrow string (for min date in calendar)
-const tomorrowStr = (() => {
-  const nowLocal = new Date();
-  const tomorrow = new Date(
-    nowLocal.getFullYear(),
-    nowLocal.getMonth(),
-    nowLocal.getDate() + 1
-  );
-  return formatLocalDate(tomorrow);
-})();
-
+  const tomorrowStr = (() => {
+    const nowLocal = new Date();
+    const tomorrow = new Date(
+      nowLocal.getFullYear(),
+      nowLocal.getMonth(),
+      nowLocal.getDate() + 1
+    );
+    return formatLocalDate(tomorrow);
+  })();
 
   // initial: clean old bookings + load fully booked list
   useEffect(() => {
@@ -122,12 +123,11 @@ const tomorrowStr = (() => {
 
   const fetchCalendarCounts = async () => {
     // Current selected month range
-const firstDay = new Date(calendarYear, calendarMonth, 1);
-const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
+    const firstDay = new Date(calendarYear, calendarMonth, 1);
+    const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
 
-const firstDayStr = formatLocalDate(firstDay);
-const lastDayStr = formatLocalDate(lastDay);
-
+    const firstDayStr = formatLocalDate(firstDay);
+    const lastDayStr = formatLocalDate(lastDay);
 
     const { data, error } = await supabase
       .from('bookings')
@@ -355,9 +355,8 @@ const lastDayStr = formatLocalDate(lastDay);
 
     // days of month
     for (let day = 1; day <= daysInMonth; day++) {
-const dateStr = formatYMD(calendarYear, calendarMonth, day);
-const count = calendarCounts[dateStr] || 0;
-
+      const dateStr = formatYMD(calendarYear, calendarMonth, day);
+      const count = calendarCounts[dateStr] || 0;
 
       cells.push({
         day,
@@ -447,7 +446,12 @@ const count = calendarCounts[dateStr] || 0;
                 );
               }
 
-              const countColor = cell.count === 3 ? 'red' : 'green';
+              // weekday: 0=Sun .. 6=Sat
+              const weekday = new Date(
+                calendarYear,
+                calendarMonth,
+                cell.day
+              ).getDay();
 
               return (
                 <div
@@ -464,10 +468,22 @@ const count = calendarCounts[dateStr] || 0;
                     style={{
                       marginTop: '2px',
                       fontSize: '0.7rem',
-                      color: countColor,
+                      textAlign: 'center',
                     }}
                   >
-                    {cell.count}
+                    {weekday >= 4 ? (
+                      // Thu, Fri, Sat -> red X
+                      <span style={{ color: 'red', fontWeight: 'bold' }}>X</span>
+                    ) : (
+                      // Sun–Wed -> show count in green or red if 3
+                      <span
+                        style={{
+                          color: cell.count === 3 ? 'red' : 'green',
+                        }}
+                      >
+                        {cell.count}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -492,15 +508,14 @@ const count = calendarCounts[dateStr] || 0;
       {/* LEFT: booking + cancel */}
       <div style={{ flex: 1, maxWidth: '480px', marginRight: '24px' }}>
         <h2
-  style={{
-    textAlign: 'center',
-    whiteSpace: 'nowrap',
-    marginBottom: '20px'
-  }}
->
-  German Chamber Booking (Max 3 per Day)
-</h2>
-
+          style={{
+            textAlign: 'center',
+            whiteSpace: 'nowrap',
+            marginBottom: '20px',
+          }}
+        >
+          German Chamber Booking (Max 3 per Day)
+        </h2>
 
         {/* Booking form */}
         <form onSubmit={handleBooking}>
@@ -606,7 +621,11 @@ const count = calendarCounts[dateStr] || 0;
         <button
           type="button"
           onClick={loadMyBookings}
-          style={{ padding: '8px 16px', marginBottom: '12px', cursor: 'pointer' }}
+          style={{
+            padding: '8px 16px',
+            marginBottom: '12px',
+            cursor: 'pointer',
+          }}
         >
           Load my bookings
         </button>
@@ -638,42 +657,53 @@ const count = calendarCounts[dateStr] || 0;
         {cancelMessage && <p style={{ marginTop: '8px' }}>{cancelMessage}</p>}
       </div>
 
-      {/* RIGHT: monthly calendar, shifted ~6cm further right */}
+      {/* RIGHT: monthly calendar, shifted right & down */}
       <div
-  style={{
-    width: '260px',
-    border: '1px solid #ddd',
-    borderRadius: '8px',
-    padding: '12px',
-    backgroundColor: '#fafafa',
-    marginLeft: '230px',
-    marginTop: '76px', // 👉 MOVE CALENDAR DOWN 2cm
-  }}
->
-  {renderCalendar()}
-  {/* Legend */}
-  <div style={{ marginTop: '16px', fontSize: '0.9rem' }}>
-    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
-      <div style={{
-        width: '14px',
-        height: '14px',
-        backgroundColor: 'red',
-        marginRight: '6px',
-      }}></div>
-      <span>Fully Booked</span>
-    </div>
+        style={{
+          width: '260px',
+          border: '1px solid #ddd',
+          borderRadius: '8px',
+          padding: '12px',
+          backgroundColor: '#fafafa',
+          marginLeft: '230px', // ≈ 6 cm to the right
+          marginTop: '76px', // ≈ 2 cm down
+        }}
+      >
+        {renderCalendar()}
 
-    <div style={{ display: 'flex', alignItems: 'center' }}>
-      <div style={{
-        width: '14px',
-        height: '14px',
-        backgroundColor: 'green',
-        marginRight: '6px',
-      }}></div>
-      <span>Available Slot</span>
-    </div>
-  </div>
-</div>
+        {/* Legend */}
+        <div style={{ marginTop: '16px', fontSize: '0.9rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              marginBottom: '6px',
+            }}
+          >
+            <div
+              style={{
+                width: '14px',
+                height: '14px',
+                backgroundColor: 'red',
+                marginRight: '6px',
+              }}
+            ></div>
+            <span>Fully Booked</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <div
+              style={{
+                width: '14px',
+                height: '14px',
+                backgroundColor: 'green',
+                marginRight: '6px',
+              }}
+            ></div>
+            <span>Available Slot</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
