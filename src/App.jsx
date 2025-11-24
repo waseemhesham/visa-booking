@@ -615,17 +615,18 @@ function App() {
 
       {/* RIGHT: monthly calendar, shifted ~6cm further right */}
       <div
-        style={{
-          width: '260px',
-          border: '1px solid #ddd',
-          borderRadius: '8px',
-          padding: '12px',
-          backgroundColor: '#fafafa',
-          marginLeft: '230px', // ≈ 6 cm to the right
-        }}
-      >
-        {renderCalendar()}
-      </div>
+  style={{
+    width: '260px',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    padding: '12px',
+    backgroundColor: '#fafafa',
+    marginLeft: '230px',
+    marginTop: '76px', // 👉 MOVE CALENDAR DOWN 2cm
+  }}
+>
+  {renderCalendar()}
+</div>
     </div>
   );
 }
