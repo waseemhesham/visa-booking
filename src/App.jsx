@@ -651,6 +651,28 @@ const count = calendarCounts[dateStr] || 0;
   }}
 >
   {renderCalendar()}
+  {/* Legend */}
+  <div style={{ marginTop: '16px', fontSize: '0.9rem' }}>
+    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
+      <div style={{
+        width: '14px',
+        height: '14px',
+        backgroundColor: 'red',
+        marginRight: '6px',
+      }}></div>
+      <span>Fully Booked</span>
+    </div>
+
+    <div style={{ display: 'flex', alignItems: 'center' }}>
+      <div style={{
+        width: '14px',
+        height: '14px',
+        backgroundColor: 'green',
+        marginRight: '6px',
+      }}></div>
+      <span>Available Slot</span>
+    </div>
+  </div>
 </div>
     </div>
   );
