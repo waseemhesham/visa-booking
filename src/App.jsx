@@ -1,4 +1,4 @@
-1import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from './db.js';
 
 // Helper: format YYYY-MM-DD from year, monthIndex (0-based), day
