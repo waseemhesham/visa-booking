@@ -55,25 +55,35 @@ function App() {
   }, []);
 
   const fetchFullyBookedDates = async () => {
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('booking_date')
-      .eq('status', 'active');
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('booking_date')
+    .eq('status', 'active');
 
-    if (error) {
-      console.error(error);
-      return;
-    }
+  if (error) {
+    console.error(error);
+    return;
+  }
 
-    const counts = {};
-    data.forEach((row) => {
-      const d = row.booking_date;
-      counts[d] = (counts[d] || 0) + 1;
-    });
+  // Count bookings per date
+  const counts = {};
+  data.forEach((row) => {
+    const d = row.booking_date;
+    counts[d] = (counts[d] || 0) + 1;
+  });
 
-    const fullDates = Object.keys(counts).filter((d) => counts[d] >= 3);
-    setFullyBookedDates(fullDates);
-  };
+  // Compute "today" in local time as YYYY-MM-DD
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayStr = today.toISOString().split('T')[0];
+
+  // Keep only today or future dates (>= today) that have 3+ bookings
+  const fullDates = Object.keys(counts).filter(
+    (d) => counts[d] >= 3 && d >= todayStr
+  );
+
+  setFullyBookedDates(fullDates);
+};
 
   const handleBooking = async (e) => {
     e.preventDefault();
