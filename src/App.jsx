@@ -37,31 +37,38 @@ function App() {
   // calendar counts: { 'YYYY-MM-DD': numberOfBookings }
   const [calendarCounts, setCalendarCounts] = useState({});
 
+  // calendar month/year state (starts at current month)
+  const now = new Date();
+  const [calendarYear, setCalendarYear] = useState(now.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(now.getMonth()); // 0-11
+
   // tomorrow string (for min date in calendar)
   const tomorrowStr = (() => {
-    const now = new Date();
+    const nowLocal = new Date();
     const tomorrow = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + 2
+      nowLocal.getFullYear(),
+      nowLocal.getMonth(),
+      nowLocal.getDate() + 2
     );
     return tomorrow.toISOString().split('T')[0];
   })();
 
-  // calendar month/year (current month)
-  const now = new Date();
-  const calendarYear = now.getFullYear();
-  const calendarMonth = now.getMonth(); // 0-11
-
-  // load data on start
+  // initial: clean old bookings + load fully booked list
   useEffect(() => {
     const init = async () => {
       await deletePastBookings();
       await fetchFullyBookedDates();
-      await fetchCalendarCounts();
     };
     init();
   }, []);
+
+  // reload calendar counts whenever month/year changes
+  useEffect(() => {
+    const loadCalendar = async () => {
+      await fetchCalendarCounts();
+    };
+    loadCalendar();
+  }, [calendarMonth, calendarYear]);
 
   const fetchFullyBookedDates = async () => {
     const { data, error } = await supabase
@@ -99,7 +106,7 @@ function App() {
   };
 
   const fetchCalendarCounts = async () => {
-    // Current month range
+    // Current selected month range
     const firstDay = new Date(calendarYear, calendarMonth, 1);
     const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
 
@@ -296,7 +303,28 @@ function App() {
     await fetchCalendarCounts();
   };
 
-  // Render calendar cells for current month
+  // month navigation for calendar
+  const goToPrevMonth = () => {
+    setCalendarMonth((prevMonth) => {
+      if (prevMonth === 0) {
+        setCalendarYear((y) => y - 1);
+        return 11;
+      }
+      return prevMonth - 1;
+    });
+  };
+
+  const goToNextMonth = () => {
+    setCalendarMonth((prevMonth) => {
+      if (prevMonth === 11) {
+        setCalendarYear((y) => y + 1);
+        return 0;
+      }
+      return prevMonth + 1;
+    });
+  };
+
+  // Render calendar cells for current selected month
   const renderCalendar = () => {
     const firstDay = new Date(calendarYear, calendarMonth, 1);
     const firstDayOfWeek = firstDay.getDay(); // 0=Sun..6=Sat
@@ -314,12 +342,10 @@ function App() {
       const dateObj = new Date(calendarYear, calendarMonth, day);
       const dateStr = dateObj.toISOString().split('T')[0];
       const count = calendarCounts[dateStr] || 0;
-      const color = count === 3 ? 'red' : 'green';
 
       cells.push({
         day,
         count,
-        color,
       });
     }
 
@@ -329,15 +355,48 @@ function App() {
       weeks.push(cells.slice(i, i + 7));
     }
 
-    const monthName = date.toLocaleString('default', {
+    const monthName = firstDay.toLocaleString('default', {
       month: 'long',
     });
 
     return (
       <div>
-        <h4 style={{ textAlign: 'center', marginBottom: '8px' }}>
-          {monthName} {calendarYear}
-        </h4>
+        {/* Header with month navigation */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '8px',
+          }}
+        >
+          <button
+            type="button"
+            onClick={goToPrevMonth}
+            style={{
+              padding: '2px 8px',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+            }}
+          >
+            ◀
+          </button>
+          <h4 style={{ margin: 0, textAlign: 'center' }}>
+            {monthName} {calendarYear}
+          </h4>
+          <button
+            type="button"
+            onClick={goToNextMonth}
+            style={{
+              padding: '2px 8px',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+            }}
+          >
+            ▶
+          </button>
+        </div>
+
         <div
           style={{
             display: 'grid',
@@ -372,6 +431,8 @@ function App() {
                 );
               }
 
+              const countColor = cell.count === 3 ? 'red' : 'green';
+
               return (
                 <div
                   key={key}
@@ -387,7 +448,7 @@ function App() {
                     style={{
                       marginTop: '2px',
                       fontSize: '0.7rem',
-                      color: cell.count === 3 ? 'red' : 'green',
+                      color: countColor,
                     }}
                   >
                     {cell.count}
@@ -406,9 +467,9 @@ function App() {
       style={{
         display: 'flex',
         alignItems: 'flex-start',
-        maxWidth: '900px',
+        maxWidth: '1100px',
         margin: '40px auto',
-        marginLeft: '120px', // shift whole UI right ~3cm
+        marginLeft: '120px', // main UI shift right
         fontFamily: 'Arial',
       }}
     >
@@ -552,7 +613,7 @@ function App() {
         {cancelMessage && <p style={{ marginTop: '8px' }}>{cancelMessage}</p>}
       </div>
 
-      {/* RIGHT: monthly calendar */}
+      {/* RIGHT: monthly calendar, shifted ~6cm further right */}
       <div
         style={{
           width: '260px',
@@ -560,6 +621,7 @@ function App() {
           borderRadius: '8px',
           padding: '12px',
           backgroundColor: '#fafafa',
+          marginLeft: '230px', // ≈ 6 cm to the right
         }}
       >
         {renderCalendar()}
