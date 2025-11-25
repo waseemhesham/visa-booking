@@ -1,446 +1,806 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "./db.js";
 
-export default function App() {
+// ---------- helpers ----------
+const formatYMD = (year, monthIndex, day) => {
+  const m = String(monthIndex + 1).padStart(2, "0");
+  const d = String(day).padStart(2, "0");
+  return `${year}-${m}-${d}`;
+};
+
+const formatLocalDate = (dateObj) => {
+  return formatYMD(
+    dateObj.getFullYear(),
+    dateObj.getMonth(),
+    dateObj.getDate()
+  );
+};
+
+// delete all past bookings (keep table clean)
+const deletePastBookings = async () => {
+  const today = new Date();
+  const localToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  );
+  const todayStr = formatLocalDate(localToday);
+
+  await supabase.from("bookings").delete().lt("booking_date", todayStr);
+};
+
+function App() {
+  // booking form
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [bookingDate, setBookingDate] = useState("");
+  const [date, setDate] = useState("");
   const [pin, setPin] = useState("");
+  const [message, setMessage] = useState("");
 
+  // cancel section
   const [cancelEmail, setCancelEmail] = useState("");
   const [cancelPin, setCancelPin] = useState("");
-  const [userBookings, setUserBookings] = useState([]);
-  const [showUserBookings, setShowUserBookings] = useState(false);
+  const [myBookings, setMyBookings] = useState([]);
+  const [cancelMessage, setCancelMessage] = useState("");
 
+  // fully booked list
   const [fullyBookedDates, setFullyBookedDates] = useState([]);
-  const [calendarMonth, setCalendarMonth] = useState(new Date());
-  const [calendarBookings, setCalendarBookings] = useState({});
-  const [selectedDayBookings, setSelectedDayBookings] = useState([]);
 
-  // ------------------------------
-  // CLEAN OLD BOOKINGS
-  // ------------------------------
-  useEffect(() => {
-    const cleanOldBookings = async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+  // calendar
+  const now = new Date();
+  const [calendarYear, setCalendarYear] = useState(now.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(now.getMonth()); // 0-11
+  const [calendarCounts, setCalendarCounts] = useState({});
 
-      await supabase
-        .from("bookings")
-        .delete()
-        .lt("booking_date", today.toISOString().split("T")[0]);
-    };
+  // popup for clicked date
+  const [popupDate, setPopupDate] = useState(null);
+  const [popupBookings, setPopupBookings] = useState([]);
 
-    cleanOldBookings();
-  }, []);
-
-  // ------------------------------
-  // LOAD FULLY-BOOKED DAYS & MONTH DATA
-  // ------------------------------
-  const loadCalendarData = async () => {
-    const { data } = await supabase.from("bookings").select("*");
-
-    // Build counts per day
-    const counts = {};
-    data.forEach((b) => {
-      if (!counts[b.booking_date]) counts[b.booking_date] = 0;
-      counts[b.booking_date]++;
-    });
-
-    setCalendarBookings(counts);
-
-    // Filter fully booked (future only)
-    const today = new Date().toISOString().split("T")[0];
-    const full = Object.keys(counts).filter(
-      (d) => counts[d] >= 3 && d >= today
+  // tomorrow (min date)
+  const tomorrowStr = (() => {
+    const today = new Date();
+    const t = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + 1
     );
-    setFullyBookedDates(full);
-  };
+    return formatLocalDate(t);
+  })();
 
+  // initial load
   useEffect(() => {
-    loadCalendarData();
+    const init = async () => {
+      await deletePastBookings();
+      await fetchFullyBookedDates();
+      await fetchCalendarCounts();
+    };
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ------------------------------
-  // HANDLE BOOKING
-  // ------------------------------
-  const handleBooking = async () => {
-    if (!email.endsWith("@sap.com")) {
-      alert("Email must end with @sap.com");
+  // reload calendar when month/year changes
+  useEffect(() => {
+    fetchCalendarCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarMonth, calendarYear]);
+
+  // ---------- data loaders ----------
+  const fetchFullyBookedDates = async () => {
+    const { data, error } = await supabase
+      .from("bookings")
+      .select("booking_date");
+
+    if (error) {
+      console.error(error);
       return;
     }
 
-    if (pin.length !== 4) {
-      alert("PIN must be 4 digits");
+    const counts = {};
+    (data || []).forEach((row) => {
+      counts[row.booking_date] = (counts[row.booking_date] || 0) + 1;
+    });
+
+    const today = new Date();
+    const localToday = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    );
+    const todayStr = formatLocalDate(localToday);
+
+    const fullDates = Object.keys(counts).filter(
+      (d) => counts[d] >= 3 && d >= todayStr
+    );
+
+    setFullyBookedDates(fullDates);
+  };
+
+  const fetchCalendarCounts = async () => {
+    const firstDay = new Date(calendarYear, calendarMonth, 1);
+    const lastDay = new Date(calendarYear, calendarMonth + 1, 0); // last day in month
+
+    const firstStr = formatLocalDate(firstDay);
+    const lastStr = formatLocalDate(lastDay);
+
+    const { data, error } = await supabase
+      .from("bookings")
+      .select("booking_date")
+      .gte("booking_date", firstStr)
+      .lte("booking_date", lastStr);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const counts = {};
+    (data || []).forEach((row) => {
+      counts[row.booking_date] = (counts[row.booking_date] || 0) + 1;
+    });
+
+    setCalendarCounts(counts);
+  };
+
+  const loadBookingsForDate = async (dateStr) => {
+    const { data, error } = await supabase
+      .from("bookings")
+      .select("employee_email")
+      .eq("booking_date", dateStr);
+
+    if (error) {
+      console.error(error);
+      setPopupBookings([]);
+      return;
+    }
+
+    setPopupBookings(data || []);
+  };
+
+  // ---------- booking ----------
+  const handleBooking = async (e) => {
+    e.preventDefault();
+    setMessage("");
+
+    if (!email || !name || !date || !pin) {
+      setMessage("Please fill all fields.");
+      return;
+    }
+
+    if (!email.toLowerCase().endsWith("@sap.com")) {
+      setMessage("Booking must use an @sap.com email.");
+      return;
+    }
+
+    if (!/^\d{4}$/.test(pin)) {
+      setMessage("PIN must be exactly 4 digits.");
       return;
     }
 
     const today = new Date();
-    const chosen = new Date(bookingDate);
-    today.setHours(0, 0, 0, 0);
+    const localToday = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    );
+    const selected = new Date(date + "T00:00:00");
 
-    if (chosen <= today) {
-      alert("You cannot book today or a past day.");
+    if (selected < localToday) {
+      setMessage("You cannot book a date in the past.");
       return;
     }
 
-    // Check if user already has a booking
-    const { data: existing } = await supabase
+    const dow = selected.getDay(); // 0=Sun..6=Sat
+    if (dow > 3) {
+      setMessage("You can only book from Sunday to Wednesday.");
+      return;
+    }
+
+    await deletePastBookings();
+
+    // one active booking per email
+    const { count: emailCount, error: emailErr } = await supabase
       .from("bookings")
-      .select("*")
+      .select("id", { count: "exact", head: true })
       .eq("employee_email", email);
 
-    if (existing.length > 0) {
-      alert("You already have a booking. Cancel it first.");
+    if (emailErr) {
+      console.error(emailErr);
+      setMessage("Error checking existing bookings.");
       return;
     }
 
-    // Check slots
-    const { data: dayBookings } = await supabase
+    if (emailCount && emailCount > 0) {
+      setMessage("You already have an active booking. Cancel it first.");
+      return;
+    }
+
+    // max 3 per day
+    const { count: dayCount, error: dayErr } = await supabase
       .from("bookings")
-      .select("*")
-      .eq("booking_date", bookingDate);
+      .select("id", { count: "exact", head: true })
+      .eq("booking_date", date);
 
-    if (dayBookings.length >= 3) {
-      alert("This date is already fully booked.");
+    if (dayErr) {
+      console.error(dayErr);
+      setMessage("Error checking availability.");
       return;
     }
 
-    const { error } = await supabase.from("bookings").insert([
+    if (dayCount >= 3) {
+      setMessage("This day already has 3 bookings.");
+      return;
+    }
+
+    const { error: insertErr } = await supabase.from("bookings").insert([
       {
         employee_email: email,
         employee_name: name,
-        booking_date: bookingDate,
-        pin: pin,
-        created_at: new Date(),
+        booking_date: date,
+        status: "active",
+        pin_code: pin,
       },
     ]);
 
-    if (error) {
-      alert("Error saving booking.");
-    } else {
-      alert("Booking confirmed!");
-      loadCalendarData();
+    if (insertErr) {
+      console.error(insertErr);
+      setMessage("Error saving booking.");
+      return;
+    }
+
+    setMessage("Booking confirmed! 🎉");
+    setEmail("");
+    setName("");
+    setDate("");
+    setPin("");
+
+    await fetchFullyBookedDates();
+    await fetchCalendarCounts();
+    if (cancelEmail && cancelEmail.toLowerCase() === email.toLowerCase()) {
+      await loadMyBookings();
     }
   };
 
-  // ------------------------------
-  // LOAD USER BOOKINGS
-  // ------------------------------
-  const loadUserBookings = async () => {
-    if (!cancelEmail.endsWith("@sap.com")) {
-      alert("Email must be @sap.com");
+  // ---------- cancel section ----------
+  const loadMyBookings = async () => {
+    setCancelMessage("");
+    setMyBookings([]);
+
+    if (!cancelEmail || !cancelPin) {
+      setCancelMessage("Please enter your email and PIN.");
       return;
     }
 
     const { data, error } = await supabase
       .from("bookings")
-      .select("*")
-      .eq("employee_email", cancelEmail);
+      .select("id, booking_date, status")
+      .eq("employee_email", cancelEmail)
+      .eq("pin_code", cancelPin)
+      .order("booking_date", { ascending: true });
 
     if (error) {
-      alert("Error loading your bookings.");
+      console.error(error);
+      setCancelMessage("Error loading your bookings.");
       return;
     }
 
-    setUserBookings(data);
-    setShowUserBookings(true);
+    setMyBookings(data || []);
+    if (!data || data.length === 0) {
+      setCancelMessage("No bookings found for this email and PIN.");
+    }
   };
 
-  // ------------------------------
-  // CANCEL BOOKING
-  // ------------------------------
-  const cancelBooking = async (bookingId, bookingPin) => {
-    if (bookingPin !== cancelPin) {
-      alert("Incorrect PIN.");
+  const cancelBookingById = async (id) => {
+    setCancelMessage("");
+
+    const { error } = await supabase.from("bookings").delete().eq("id", id);
+
+    if (error) {
+      console.error(error);
+      setCancelMessage("Error cancelling booking.");
       return;
     }
 
-    await supabase.from("bookings").delete().eq("id", bookingId);
+    setCancelMessage("Booking cancelled ✅");
 
-    alert("Booking cancelled.");
-    setShowUserBookings(false);
-    loadCalendarData();
+    await loadMyBookings();
+    await fetchFullyBookedDates();
+    await fetchCalendarCounts();
   };
 
-  // ------------------------------
-  // CALENDAR HELPERS
-  // ------------------------------
-  const daysInMonth = (year, month) =>
-    new Date(year, month + 1, 0).getDate();
-
-  const handleDayClick = async (day) => {
-    const dateStr = `${calendarMonth.getFullYear()}-${String(
-      calendarMonth.getMonth() + 1
-    ).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-
-    const { data } = await supabase
-      .from("bookings")
-      .select("employee_email")
-      .eq("booking_date", dateStr);
-
-    setSelectedDayBookings(data);
+  // ---------- calendar navigation ----------
+  const goPrevMonth = () => {
+    setCalendarMonth((prev) => {
+      if (prev === 0) {
+        setCalendarYear((y) => y - 1);
+        return 11;
+      }
+      return prev - 1;
+    });
   };
 
-  const monthName = calendarMonth.toLocaleString("en-US", {
-    month: "long",
-  });
+  const goNextMonth = () => {
+    setCalendarMonth((prev) => {
+      if (prev === 11) {
+        setCalendarYear((y) => y + 1);
+        return 0;
+      }
+      return prev + 1;
+    });
+  };
 
-  const year = calendarMonth.getFullYear();
-  const month = calendarMonth.getMonth();
-  const totalDays = daysInMonth(year, month);
+  // ---------- render calendar ----------
+  const renderCalendar = () => {
+    const firstDay = new Date(calendarYear, calendarMonth, 1);
+    const firstWeekday = firstDay.getDay(); // 0=Sun..6=Sat
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
 
+    const cells = [];
+
+    // empty cells before day 1
+    for (let i = 0; i < firstWeekday; i++) {
+      cells.push(null);
+    }
+
+    // actual days
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = formatYMD(calendarYear, calendarMonth, d);
+      const count = calendarCounts[dateStr] || 0;
+      cells.push({ day: d, dateStr, count });
+    }
+
+    const weeks = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      weeks.push(cells.slice(i, i + 7));
+    }
+
+    const monthName = firstDay.toLocaleString("default", { month: "long" });
+
+    return (
+      <div>
+        {/* header with nav */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "8px",
+          }}
+        >
+          <button
+            type="button"
+            onClick={goPrevMonth}
+            style={{
+              padding: "4px 8px",
+              borderRadius: "6px",
+              border: "1px solid #ccc",
+              cursor: "pointer",
+            }}
+          >
+            ◀
+          </button>
+          <h4 style={{ margin: 0 }}>
+            {monthName} {calendarYear}
+          </h4>
+          <button
+            type="button"
+            onClick={goNextMonth}
+            style={{
+              padding: "4px 8px",
+              borderRadius: "6px",
+              border: "1px solid #ccc",
+              cursor: "pointer",
+            }}
+          >
+            ▶
+          </button>
+        </div>
+
+        {/* weekday row */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(7, 1fr)",
+            textAlign: "center",
+            fontWeight: "600",
+            marginBottom: "6px",
+            fontSize: "0.8rem",
+          }}
+        >
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+            <div key={d}>{d}</div>
+          ))}
+        </div>
+
+        {/* calendar body */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(7, 1fr)",
+            gap: "4px",
+            fontSize: "0.8rem",
+          }}
+        >
+          {weeks.map((week, wi) =>
+            week.map((cell, ci) => {
+              const key = `${wi}-${ci}`;
+              if (!cell) {
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      border: "1px solid #eee",
+                      minHeight: "40px",
+                    }}
+                  />
+                );
+              }
+
+              const dayDate = new Date(calendarYear, calendarMonth, cell.day);
+              const weekday = dayDate.getDay(); // 0..6
+
+              const isThuFriSat = weekday >= 4; // 4,5,6
+              const color =
+                isThuFriSat || cell.count === 3 ? "red" : "green";
+
+              return (
+                <div
+                  key={key}
+                  onClick={() => {
+                    setPopupDate(cell.dateStr);
+                    loadBookingsForDate(cell.dateStr);
+                  }}
+                  style={{
+                    border: "1px solid #ddd",
+                    borderRadius: "6px",
+                    minHeight: "40px",
+                    padding: "2px",
+                    textAlign: "center",
+                    cursor: "pointer",
+                    backgroundColor: "#fff",
+                  }}
+                >
+                  <div>{cell.day}</div>
+                  <div style={{ marginTop: "2px", fontSize: "0.7rem", color }}>
+                    {isThuFriSat ? (
+                      <span style={{ fontWeight: "bold" }}>X</span>
+                    ) : (
+                      cell.count
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ---------- UI ----------
   return (
     <div
       style={{
         minHeight: "100vh",
-        backgroundImage: "url('/german-chamber-bg.jpg')",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        padding: "40px",
+        padding: "40px 0",
+        paddingLeft: "56px", // move whole card 56px to the right
+        fontFamily: "Arial, sans-serif",
         display: "flex",
         justifyContent: "center",
+        alignItems: "flex-start",
       }}
     >
       <div
         style={{
-          width: "1100px",
-          background: "rgba(255,255,255,0.9)",
-          padding: "40px",
+          width: "1300px",
+          display: "grid",
+          gridTemplateColumns: "2fr 1.3fr",
+          gap: "48px",
+          alignItems: "flex-start",
+          backgroundColor: "rgba(255,255,255,0.92)",
+          padding: "40px 50px",
           borderRadius: "18px",
-          display: "flex",
-          gap: "50px",
-          marginLeft: "56px",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
         }}
       >
-        {/* LEFT PANEL */}
-        <div style={{ flex: 1 }}>
-          <h2>German Chamber Booking (Max 3 per Day)</h2>
-
-          <label>Email (@sap.com)</label>
-          <input
-            style={{ width: "100%", padding: "10px" }}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-
-          <br /><br />
-          <label>Name</label>
-          <input
-            style={{ width: "100%", padding: "10px" }}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-
-          <br /><br />
-          <label>Booking Date</label>
-          <input
-            type="date"
-            style={{ width: "100%", padding: "10px" }}
-            value={bookingDate}
-            onChange={(e) => setBookingDate(e.target.value)}
-          />
-
-          <br /><br />
-          <label>PIN (4 digits)</label>
-          <input
-            style={{ width: "100%", padding: "10px" }}
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-          />
-
-          <br /><br />
-          <button
+        {/* LEFT: booking + cancel */}
+        <div style={{ maxWidth: "540px" }}>
+          <h2
             style={{
-              padding: "10px 20px",
-              background: "#0d6efd",
-              color: "white",
-              borderRadius: "6px",
-              border: "none",
+              textAlign: "center",
+              marginBottom: "24px",
+              whiteSpace: "nowrap",
             }}
-            onClick={handleBooking}
           >
-            Book
-          </button>
+            German Chamber Booking (Max 3 per Day)
+          </h2>
 
-          <br /><br /><br />
+          <form onSubmit={handleBooking}>
+            <div style={{ marginBottom: "12px" }}>
+              <label>Email (@sap.com)</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value.trim())}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  marginTop: "4px",
+                  borderRadius: "8px",
+                  border: "1px solid #ccc",
+                }}
+              />
+            </div>
 
-          <h3>Fully booked dates (today & future):</h3>
-          <ul>
-            {fullyBookedDates.map((d) => (
-              <li key={d}>{d}</li>
-            ))}
-          </ul>
+            <div style={{ marginBottom: "12px" }}>
+              <label>Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  marginTop: "4px",
+                  borderRadius: "8px",
+                  border: "1px solid #ccc",
+                }}
+              />
+            </div>
 
-          <hr />
+            <div style={{ marginBottom: "12px" }}>
+              <label>Booking Date</label>
+              <input
+                key={tomorrowStr}
+                type="date"
+                value={date}
+                min={tomorrowStr}
+                onChange={(e) => setDate(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  marginTop: "4px",
+                  borderRadius: "8px",
+                  border: "1px solid #ccc",
+                }}
+              />
+            </div>
 
+            <div style={{ marginBottom: "12px" }}>
+              <label>PIN (4 digits)</label>
+              <input
+                type="password"
+                value={pin}
+                maxLength={4}
+                inputMode="numeric"
+                onChange={(e) => setPin(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  marginTop: "4px",
+                  borderRadius: "8px",
+                  border: "1px solid #ccc",
+                }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              style={{
+                padding: "10px 20px",
+                borderRadius: "8px",
+                border: "none",
+                backgroundColor: "#0a66c2",
+                color: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              Book
+            </button>
+          </form>
+
+          {message && (
+            <p style={{ marginTop: "12px", color: "#333" }}>{message}</p>
+          )}
+
+          {/* fully booked list */}
+          <div style={{ marginTop: "24px" }}>
+            <strong>Fully booked dates (today & future):</strong>
+            {fullyBookedDates.length === 0 ? (
+              <p style={{ marginTop: "4px" }}>No fully booked days yet.</p>
+            ) : (
+              <ul style={{ marginTop: "4px" }}>
+                {fullyBookedDates.map((d) => (
+                  <li key={d}>{d}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <hr style={{ margin: "28px 0" }} />
+
+          {/* cancel block */}
           <h3>Cancel my booking</h3>
-          <label>Your email (@sap.com)</label>
-          <input
-            style={{ width: "100%", padding: "10px" }}
-            value={cancelEmail}
-            onChange={(e) => setCancelEmail(e.target.value)}
-          />
 
-          <br /><br />
-          <label>Your PIN (4 digits)</label>
-          <input
-            style={{ width: "100%", padding: "10px" }}
-            value={cancelPin}
-            onChange={(e) => setCancelPin(e.target.value)}
-          />
+          <div style={{ marginBottom: "12px" }}>
+            <label>Your email (@sap.com)</label>
+            <input
+              type="email"
+              value={cancelEmail}
+              onChange={(e) => setCancelEmail(e.target.value.trim())}
+              style={{
+                width: "100%",
+                padding: "10px",
+                marginTop: "4px",
+                borderRadius: "8px",
+                border: "1px solid #ccc",
+              }}
+            />
+          </div>
 
-          <br /><br />
+          <div style={{ marginBottom: "12px" }}>
+            <label>Your PIN (4 digits)</label>
+            <input
+              type="password"
+              value={cancelPin}
+              onChange={(e) => setCancelPin(e.target.value)}
+              maxLength={4}
+              inputMode="numeric"
+              style={{
+                width: "100%",
+                padding: "10px",
+                marginTop: "4px",
+                borderRadius: "8px",
+                border: "1px solid #ccc",
+              }}
+            />
+          </div>
+
           <button
+            type="button"
+            onClick={loadMyBookings}
             style={{
               padding: "10px 20px",
-              background: "#0d6efd",
-              color: "white",
-              borderRadius: "6px",
+              borderRadius: "8px",
               border: "none",
+              backgroundColor: "#0a66c2",
+              color: "#fff",
+              cursor: "pointer",
             }}
-            onClick={loadUserBookings}
           >
             Load my bookings
           </button>
 
-          {showUserBookings && (
-            <>
-              <h4>Your bookings:</h4>
-              <ul>
-                {userBookings.map((b) => (
-                  <li key={b.id}>
-                    {b.booking_date} – {b.employee_email}
+          {myBookings.length > 0 && (
+            <div style={{ marginTop: "12px" }}>
+              <strong>Your bookings:</strong>
+              <ul style={{ marginTop: "6px" }}>
+                {myBookings.map((b) => (
+                  <li key={b.id} style={{ marginBottom: "4px" }}>
+                    {b.booking_date} — {b.status}
                     <button
+                      type="button"
+                      onClick={() => cancelBookingById(b.id)}
                       style={{
-                        marginLeft: "10px",
-                        padding: "5px 10px",
-                        background: "red",
-                        color: "white",
+                        marginLeft: "8px",
+                        padding: "4px 10px",
+                        borderRadius: "6px",
                         border: "none",
-                        borderRadius: "5px",
+                        cursor: "pointer",
+                        backgroundColor: "#c53030",
+                        color: "#fff",
                       }}
-                      onClick={() => cancelBooking(b.id, b.pin)}
                     >
                       Cancel
                     </button>
                   </li>
                 ))}
               </ul>
-            </>
-          )}
-        </div>
-
-        {/* RIGHT CALENDAR PANEL */}
-        <div
-          style={{
-            width: "430px",
-            background: "white",
-            padding: "20px",
-            borderRadius: "14px",
-            marginLeft: "-15px",
-            marginTop: "27px",
-            border: "1px solid #ccc",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <button
-              onClick={() =>
-                setCalendarMonth(
-                  new Date(year, month - 1, 1)
-                )
-              }
-            >
-              ◀
-            </button>
-
-            <strong>{monthName} {year}</strong>
-
-            <button
-              onClick={() =>
-                setCalendarMonth(
-                  new Date(year, month + 1, 1)
-                )
-              }
-            >
-              ▶
-            </button>
-          </div>
-
-          {/* CALENDAR GRID */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(7, 1fr)",
-              textAlign: "center",
-              marginTop: "15px",
-            }}
-          >
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-              <div key={d} style={{ fontWeight: "bold" }}>{d}</div>
-            ))}
-
-            {Array.from({ length: totalDays }, (_, i) => i + 1).map((day) => {
-              const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-              const count = calendarBookings[dateStr] || 0;
-              const dayObj = new Date(dateStr);
-              const weekday = dayObj.getDay();
-
-              let color = "green";
-              if (weekday === 4 || weekday === 5 || weekday === 6) {
-                color = "red";
-              } else if (count >= 3) {
-                color = "red";
-              }
-
-              return (
-                <div
-                  key={day}
-                  onClick={() => handleDayClick(day)}
-                  style={{
-                    padding: "6px",
-                    margin: "3px",
-                    borderRadius: "6px",
-                    background: "#f7f7f7",
-                    cursor: "pointer",
-                  }}
-                >
-                  <strong>{day}</strong>
-                  <div style={{ color: color, marginTop: "3px" }}>
-                    {weekday === 4 || weekday === 5 || weekday === 6 ? "X" : count}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* LEGENDS */}
-          <div style={{ marginTop: "15px" }}>
-            <div><span style={{ color: "red" }}>■</span> Fully Booked</div>
-            <div><span style={{ color: "green" }}>■</span> Available Slot</div>
-            <div><span style={{ color: "red" }}>X</span> Not Available</div>
-          </div>
-
-          {/* POPUP SELECTED DAY */}
-          {selectedDayBookings.length > 0 && (
-            <div
-              style={{
-                marginTop: "15px",
-                padding: "10px",
-                background: "#eef",
-                borderRadius: "8px",
-              }}
-            >
-              <strong>Booked emails:</strong>
-              <ul>
-                {selectedDayBookings.map((b, i) => (
-                  <li key={i}>{b.employee_email}</li>
-                ))}
-              </ul>
             </div>
           )}
+
+          {cancelMessage && (
+            <p style={{ marginTop: "8px", color: "#333" }}>{cancelMessage}</p>
+          )}
+        </div>
+
+        {/* RIGHT: calendar */}
+        <div
+          style={{
+            width: "100%",
+            borderRadius: "10px",
+            border: "1px solid #ddd",
+            padding: "16px",
+            backgroundColor: "#fafafa",
+            marginLeft: "-35px", // move calendar 35px left
+            marginTop: "27px", // move calendar 27px down
+          }}
+        >
+          {renderCalendar()}
+
+          {/* Legend */}
+          <div style={{ marginTop: "16px", fontSize: "0.9rem" }}>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div
+                style={{
+                  width: "14px",
+                  height: "14px",
+                  backgroundColor: "red",
+                  marginRight: "6px",
+                }}
+              />
+              <span>Fully Booked</span>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div
+                style={{
+                  width: "14px",
+                  height: "14px",
+                  backgroundColor: "green",
+                  marginRight: "6px",
+                }}
+              />
+              <span>Available Slot</span>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <span
+                style={{
+                  color: "red",
+                  fontWeight: "bold",
+                  marginRight: "6px",
+                }}
+              >
+                X
+              </span>
+              <span>Not Available</span>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* popup with emails for clicked date */}
+      {popupDate && (
+        <div
+          style={{
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            background: "#fff",
+            border: "2px solid #444",
+            borderRadius: "8px",
+            padding: "20px",
+            zIndex: 1000,
+            minWidth: "280px",
+          }}
+        >
+          <h3 style={{ marginTop: 0 }}>Bookings on {popupDate}</h3>
+
+          {popupBookings.length === 0 ? (
+            <p>No bookings for this date.</p>
+          ) : (
+            <ul>
+              {popupBookings.map((b, i) => (
+                <li key={i}>{b.employee_email}</li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            onClick={() => setPopupDate(null)}
+            style={{
+              marginTop: "12px",
+              padding: "6px 12px",
+              cursor: "pointer",
+            }}
+          >
+            Close
+          </button>
+        </div>
+      )}
     </div>
   );
 }
+
+export default App;
