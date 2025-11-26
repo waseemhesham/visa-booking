@@ -801,6 +801,15 @@ function App() {
     </div>
   </div>
 </div>
+<p
+  style={{
+    marginTop: "16px",
+    fontSize: "0.8rem",
+    color: "#333",
+  }}
+>
+  Note: Employees visiting the German Chamber must coordinate the visit together so the Chamber can issue one invoice for the company.
+</p>
 
 
         </div>
