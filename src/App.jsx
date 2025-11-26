@@ -717,45 +717,92 @@ function App() {
         >
           {renderCalendar()}
 
-          {/* Legend */}
-          <div style={{ marginTop: "16px", fontSize: "0.9rem" }}>
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <div
-                style={{
-                  width: "14px",
-                  height: "14px",
-                  backgroundColor: "red",
-                  marginRight: "6px",
-                }}
-              />
-              <span>Fully Booked</span>
-            </div>
+{/* Legend */}
+<div
+  style={{
+    marginTop: "16px",
+    fontSize: "0.9rem",
+    display: "flex",
+    gap: "32px",
+    alignItems: "center",
+  }}
+>
+  {/* Left column (existing legends) */}
+  <div>
+    <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
+      <div
+        style={{
+          width: "14px",
+          height: "14px",
+          backgroundColor: "red",
+          marginRight: "6px",
+        }}
+      />
+      <span>Fully Booked</span>
+    </div>
 
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <div
-                style={{
-                  width: "14px",
-                  height: "14px",
-                  backgroundColor: "green",
-                  marginRight: "6px",
-                }}
-              />
-              <span>Available Slot</span>
-            </div>
+    <div style={{ display: "flex", alignItems: "center", marginBottom: "4px" }}>
+      <div
+        style={{
+          width: "14px",
+          height: "14px",
+          backgroundColor: "green",
+          marginRight: "6px",
+        }}
+      />
+      <span>Available Slot</span>
+    </div>
 
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <span
-                style={{
-                  color: "red",
-                  fontWeight: "bold",
-                  marginRight: "6px",
-                }}
-              >
-                X
-              </span>
-              <span>Not Available</span>
-            </div>
-          </div>
+    <div style={{ display: "flex", alignItems: "center" }}>
+      <span
+        style={{
+          color: "red",
+          fontWeight: "bold",
+          marginRight: "6px",
+        }}
+      >
+        X
+      </span>
+      <span>Not Available</span>
+    </div>
+  </div>
+
+  {/* RIGHT column — sample day legend */}
+  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+    <div
+  style={{
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    marginLeft: "100px",   // 👈 move ONLY the sample legend right
+  }}
+></div>
+    {/* Sample box */}
+    <div
+      style={{
+        border: "1px solid #ccc",
+        borderRadius: "6px",
+        width: "40px",
+        padding: "4px 0",
+        backgroundColor: "#fff",
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: "0.8rem" }}>15</div>
+      <div style={{ color: "green", fontSize: "0.75rem", marginTop: "2px" }}>
+        1
+      </div>
+    </div>
+
+    {/* Arrow labels */}
+    <div style={{ fontSize: "0.75rem", lineHeight: "1.4" }}>
+      <div>⬅ Day</div>
+      <div>⬅ Number of Bookings</div>
+    </div>
+  </div>
+</div>
+
+
         </div>
       </div>
 
