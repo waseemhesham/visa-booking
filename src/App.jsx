@@ -566,7 +566,7 @@ function App() {
             </div>
 
             <div style={{ marginBottom: "12px" }}>
-              <label>PIN (4 digits)</label>
+              <label>Enter any PIN (4 digits)</label>
               <input
                 type="password"
                 value={pin}
