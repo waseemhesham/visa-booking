@@ -62,7 +62,7 @@ function App() {
     const t = new Date(
       today.getFullYear(),
       today.getMonth(),
-      today.getDate() + 1
+      today.getDate()
     );
     return formatLocalDate(t);
   })();
