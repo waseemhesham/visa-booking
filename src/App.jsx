@@ -810,7 +810,22 @@ function App() {
 >
   Note: Employees visiting the German Chamber must coordinate the visit together so the Chamber can issue one invoice for the company.
 </p>
-
+<p
+  style={{
+    marginTop: "8px",
+    fontSize: "0.8rem",
+  }}
+>
+  German Chamber Location:&nbsp;
+  <a
+    href="https://maps.app.goo.gl/EWqdsUsVrAEZHWKE7?g_st=ipc"
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{ color: "#0a66c2", textDecoration: "underline", fontWeight: "500" }}
+  >
+    German Chamber Google Maps Link
+  </a>
+</p>
 
         </div>
       </div>
